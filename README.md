@@ -17,6 +17,22 @@ https://github.com/user-attachments/assets/3a359f47-c706-46b9-8b16-d05f430d402c
 
 You're in the middle of a longer task and want to ask something small without derailing the main thread — check an API detail, sanity-check an approach, search something, or peek at what the main agent is doing. Open the overlay, ask, close it. Main thread never gets interrupted.
 
+## Oh My Pi (OMP)
+
+OMP support is verified with version 18.1.11. To use a source checkout:
+
+```bash
+omp plugin link /path/to/pi-side-chat
+```
+
+Restart OMP and run `/side`. OMP supplies the host packages through its Pi
+compatibility loader; installing Pi separately is not required. Shortcut settings
+use OMP's agent directory (`~/.omp/agent/pi-side-chat.json` by default).
+
+The extension adapts overlay focus, editor construction, and model-based
+credential lookup while retaining Pi's existing APIs. OMP keyboard verification
+uses Kitty-protocol key sequences; legacy Alt-key encodings may differ.
+
 ## Quick Start
 
 Open side chat with `Alt+/` or `/side`. Ask a question and press `Enter`.

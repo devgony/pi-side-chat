@@ -102,8 +102,10 @@ export class SideChatOverlay implements Component, Focusable {
         messages: framingMessage ? [...forkedMessages, framingMessage] : forkedMessages,
       },
       convertToLlm,
-      getApiKey: async (provider) => {
-        const key = await modelRegistry.getApiKeyForProvider(provider);
+      getApiKey: async (target: string | ForkContext["model"]) => {
+        const key = typeof target === "string"
+          ? await modelRegistry.getApiKeyForProvider(target)
+          : await modelRegistry.getApiKey(target);
         if (!key) throw new Error("No API key available");
         return key;
       },
@@ -112,7 +114,16 @@ export class SideChatOverlay implements Component, Focusable {
     this.agent.subscribe((e) => this.handleAgentEvent(e));
     this.messages = new SideChatMessages(theme, 20);
     this.messages.setMessages(forkedMessages);
-    this.editor = new Editor(tui, { borderColor: (t) => theme.fg("borderMuted", t), selectList: getSelectListTheme() }, { paddingX: 0 });
+    const editorTheme = { borderColor: (t: string) => theme.fg("borderMuted", t), selectList: getSelectListTheme() };
+    // OMP's editor takes a complete theme; Pi's editor takes the TUI first.
+    if ("symbols" in editorTheme.selectList) {
+      const ompTheme = { ...editorTheme, symbols: editorTheme.selectList.symbols };
+      const OmpEditor = Editor as unknown as new (theme: typeof ompTheme) => Editor;
+      this.editor = new OmpEditor(ompTheme);
+      this.editor.setPaddingX(0);
+    } else {
+      this.editor = new Editor(tui, editorTheme, { paddingX: 0 });
+    }
     this.editor.onSubmit = (text) => this.handleSubmit(text);
   }
 

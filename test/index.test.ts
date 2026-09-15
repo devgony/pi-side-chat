@@ -22,11 +22,20 @@ test.after(() => {
   rmSync(testAgentDir, { recursive: true, force: true });
 });
 
-test("extension updates the live overlay options object in place", async () => {
+for (const host of ["pi", "omp"]) {
+test(`side chat keeps its draft while switching focus and display mode on ${host}`, async () => {
   const commands = new Map<string, { handler: (args: string, context: unknown) => unknown }>();
   const shortcuts = new Map<string, { handler: (context: unknown) => unknown }>();
-  let focusCalls = 0;
-  let unfocusCalls = 0;
+  const mainEditor = { focused: true, render: () => ["main draft"] };
+  let focused: { focused: boolean } = mainEditor;
+  let visibleOverlay: { focused: boolean; ownsOverlayFocusTarget?: (component: unknown) => boolean } | undefined;
+  const setFocus = (component: { focused: boolean }) => {
+    if (host === "omp" && visibleOverlay && component !== visibleOverlay &&
+        !visibleOverlay.ownsOverlayFocusTarget?.(component)) return;
+    focused.focused = false;
+    focused = component;
+    component.focused = true;
+  };
 
   const pi = {
     on: () => {},
@@ -67,12 +76,13 @@ test("extension updates the live overlay options object in place", async () => {
     terminal: { rows: 40, columns: 120 },
     hasOverlay: () => false,
     requestRender: () => {},
+    ...(host === "omp" ? { getFocused: () => focused, setFocus } : {}),
   };
   const theme = { fg: (_color: string, text: string) => text };
-  const handle = {
-    focus: () => { focusCalls++; },
-    unfocus: () => { unfocusCalls++; },
-    isFocused: () => true,
+  const handle = host === "omp" ? {} : {
+    focus: () => { assert.ok(visibleOverlay); setFocus(visibleOverlay); },
+    unfocus: () => setFocus(mainEditor),
+    isFocused: () => focused === visibleOverlay,
   };
 
   const context = {
@@ -86,45 +96,40 @@ test("extension updates the live overlay options object in place", async () => {
       confirm: async () => true,
       custom: async (
         factory: (tui: unknown, theme: unknown, keybindings: unknown, done: (result: string) => void) => {
+          focused: boolean;
           handleInput: (data: string) => void;
+          render: (width: number) => string[];
           dispose: () => void;
         },
         options: { overlayOptions: OverlayOptions; onHandle: (overlayHandle: unknown) => void },
       ) => {
-        const originalOptions = options.overlayOptions;
         let completed = false;
         const overlay = factory(tui, theme, {}, () => { completed = true; });
+        visibleOverlay = overlay;
+        setFocus(overlay);
         options.onHandle(handle);
 
-        assert.deepEqual(originalOptions, {
-          width: "85%",
-          maxHeight: "35%",
-          anchor: "top-center",
-          margin: { top: 1, left: 2, right: 2 },
-          nonCapturing: true,
-        });
+        overlay.handleInput("side draft");
+        assert.equal(focused, overlay);
+        assert.match(overlay.render(100).join("\n"), /side draft/);
 
-        overlay.handleInput("\x1b[77;4u");
-        assert.equal(options.overlayOptions, originalOptions);
-        assert.deepEqual(originalOptions, {
-          width: "100%",
-          maxHeight: "100%",
-          anchor: "top-left",
-          margin: 0,
-          nonCapturing: true,
-        });
+        await shortcuts.get("alt+/")!.handler(context);
+        assert.equal(focused, mainEditor);
+        assert.equal(overlay.focused, false);
+        assert.match(overlay.render(100).join("\n"), /side draft/);
+
+        await shortcuts.get("alt+/")!.handler(context);
+        assert.equal(focused, overlay);
+        assert.equal(overlay.focused, true);
+        assert.doesNotMatch(overlay.render(100).join("\n"), /main draft/);
 
         fullscreenShortcut.handler(context);
-        assert.equal(options.overlayOptions, originalOptions);
-        assert.deepEqual(originalOptions, {
-          width: "85%",
-          maxHeight: "35%",
-          anchor: "top-center",
-          margin: { top: 1, left: 2, right: 2 },
-          nonCapturing: true,
-        });
-        assert.equal(focusCalls, 1);
-        assert.equal(unfocusCalls, 0);
+        const expanded = overlay.render(100);
+        assert.match(expanded.join("\n"), /side draft/);
+        assert.equal(expanded.length, tui.terminal.rows);
+        fullscreenShortcut.handler(context);
+        assert.ok(overlay.render(100).length < expanded.length);
+        assert.match(overlay.render(100).join("\n"), /side draft/);
 
         overlay.dispose();
         assert.equal(completed, true);
@@ -135,6 +140,7 @@ test("extension updates the live overlay options object in place", async () => {
 
   await command.handler("", context);
 });
+}
 
 test("loads custom shortcuts from the agent dir config", () => {
   writeFileSync(

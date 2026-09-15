@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- OMP compatibility for overlay focus delegation, editor themes, and model-based credential lookup, verified with OMP 18.1.11.
+
 ## [0.3.0] - 2026-09-04
 
 ### Highlights

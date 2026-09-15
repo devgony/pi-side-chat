@@ -1,6 +1,6 @@
 import type { AgentMessage, AgentTool } from "@mariozechner/pi-agent-core";
 import type { ExtensionAPI, ExtensionContext, ExtensionUIContext } from "@mariozechner/pi-coding-agent";
-import type { OverlayHandle } from "@mariozechner/pi-tui";
+import type { Component, OverlayHandle, TUI } from "@mariozechner/pi-tui";
 import { buildSessionContext, ExtensionRunner, getAgentDir } from "@mariozechner/pi-coding-agent";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
@@ -36,6 +36,25 @@ const DEFAULT_SHORTCUT = "alt+/";
 const DEFAULT_FULLSCREEN_SHORTCUT = "alt+shift+m";
 const OVERLAY_BLOCKED_ERROR = "PI_SIDE_CHAT_OVERLAY_BLOCKED";
 
+type OverlayFocus = Pick<OverlayHandle, "focus" | "unfocus" | "isFocused">;
+type FocusTUI = TUI & { getFocused?: () => Component | null };
+
+function getOverlayFocus(handle: OverlayHandle, tui: FocusTUI, overlay: SideChatOverlay, parent: Component | null): OverlayFocus {
+  if (typeof handle.focus === "function") return handle;
+  if (!tui.getFocused) throw new Error("This terminal does not support side-chat focus switching");
+
+  // OMP delegates focus through the overlay component rather than its handle.
+  // Include the main editor so the side chat can stay visible while it is idle.
+  Object.assign(overlay, {
+    ownsOverlayFocusTarget: (component: Component) => component === parent,
+  });
+  return {
+    focus: () => { tui.setFocus(overlay); tui.requestRender(); },
+    unfocus: () => { tui.setFocus(parent); tui.requestRender(); },
+    isFocused: () => tui.getFocused!() === overlay,
+  };
+}
+
 function loadConfig(): { shortcut: string; fullscreenShortcut: string } {
   const configPath = join(getAgentDir(), "pi-side-chat.json");
   try {
@@ -60,7 +79,7 @@ export default function sideChatExtension(pi: ExtensionAPI) {
   const config = loadConfig();
   const tracker = new FileActivityTracker();
   let activeOverlay: SideChatOverlay | null = null;
-  let overlayHandle: OverlayHandle | null = null;
+  let overlayFocus: OverlayFocus | null = null;
   let lastMessages: AgentMessage[] | null = null;
 
   pi.on("tool_execution_start", (event, ctx) => {
@@ -72,10 +91,10 @@ export default function sideChatExtension(pi: ExtensionAPI) {
 
   const toggleSideChat = async (ctx: ExtensionContext) => {
     if (activeOverlay) {
-      if (overlayHandle?.isFocused()) {
-        overlayHandle.unfocus();
+      if (overlayFocus?.isFocused()) {
+        overlayFocus.unfocus();
       } else {
-        overlayHandle?.focus();
+        overlayFocus?.focus();
       }
       return;
     }
@@ -99,6 +118,8 @@ export default function sideChatExtension(pi: ExtensionAPI) {
       extensionTools: getExtensionAgentTools(),
     };
     const overlayOptions = getOverlayOptions("compact");
+    let overlayTui: FocusTUI;
+    let parentFocus: Component | null = null;
 
     try {
       const action = await ctx.ui.custom<"close" | "refork" | "clear">(
@@ -110,6 +131,8 @@ export default function sideChatExtension(pi: ExtensionAPI) {
             throw new Error(OVERLAY_BLOCKED_ERROR);
           }
 
+          overlayTui = tui;
+          parentFocus = overlayTui.getFocused?.() ?? null;
           activeOverlay = new SideChatOverlay({
             tui,
             theme,
@@ -124,11 +147,11 @@ export default function sideChatExtension(pi: ExtensionAPI) {
               Object.assign(overlayOptions, getOverlayOptions(mode));
             },
             onOverlapWarning: (path) => showOverlapWarning(ctx.ui, path),
-            onUnfocus: () => overlayHandle?.unfocus(),
+            onUnfocus: () => overlayFocus?.unfocus(),
             onClose: (action, messages) => {
               lastMessages = action === "close" ? messages : null;
               activeOverlay = null;
-              overlayHandle = null;
+              overlayFocus = null;
               done(action);
             },
           });
@@ -138,8 +161,8 @@ export default function sideChatExtension(pi: ExtensionAPI) {
           overlay: true,
           overlayOptions,
           onHandle: (handle) => {
-            overlayHandle = handle;
-            handle.focus();
+            overlayFocus = getOverlayFocus(handle, overlayTui, activeOverlay!, parentFocus);
+            overlayFocus.focus();
           },
         },
       );
@@ -150,7 +173,7 @@ export default function sideChatExtension(pi: ExtensionAPI) {
         return;
       }
       activeOverlay = null;
-      overlayHandle = null;
+      overlayFocus = null;
       throw error;
     }
   };
