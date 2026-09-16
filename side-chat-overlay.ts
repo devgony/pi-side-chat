@@ -93,11 +93,18 @@ export class SideChatOverlay implements Component, Focusable {
     this.forkLeafId = sessionManager.getLeafId();
     this.peekMainTool = this.createPeekMainTool(sessionManager);
 
+    // Pi stores "off" as a level; OMP separates effort from disabling reasoning.
+    // Let OMP's provider layer normalize mandatory-reasoning models.
+    const usesEffortState = "setDisableReasoning" in Agent.prototype;
+    const thinkingOff = forkContext.thinkingLevel === "off";
+
     this.agent = new Agent({
       initialState: {
         systemPrompt: forkContext.systemPrompt + SIDE_CHAT_PROMPT,
         model: forkContext.model,
-        thinkingLevel: forkContext.thinkingLevel,
+        ...(usesEffortState
+          ? { thinkingLevel: thinkingOff ? undefined : forkContext.thinkingLevel, disableReasoning: thinkingOff }
+          : { thinkingLevel: forkContext.thinkingLevel }),
         tools: [...initialTools, ...forkContext.extensionTools, this.peekMainTool],
         messages: framingMessage ? [...forkedMessages, framingMessage] : forkedMessages,
       },

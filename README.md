@@ -33,6 +33,10 @@ The extension adapts overlay focus, editor construction, and model-based
 credential lookup while retaining Pi's existing APIs. OMP keyboard verification
 uses Kitty-protocol key sequences; legacy Alt-key encodings may differ.
 
+Thinking settings follow the host's semantics: OMP receives an explicit
+reasoning-disable flag for `off`, not an effort named `"off"`. OMP then applies
+its own model-specific rules, including mandatory-reasoning models.
+
 ## Quick Start
 
 Open side chat with `Alt+/` or `/side`. Ask a question and press `Enter`.

@@ -6,6 +6,10 @@
 
 - OMP compatibility for overlay focus delegation, editor themes, and model-based credential lookup, verified with OMP 18.1.11.
 
+### Fixed
+
+- Translate OMP's `off` thinking selector into its separate reasoning-disable flag instead of sending `"off"` as a provider effort.
+
 ## [0.3.0] - 2026-09-04
 
 ### Highlights
